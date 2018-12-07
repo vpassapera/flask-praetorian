@@ -25,7 +25,7 @@ setup(
         'pytest-runner',
     ],
     tests_require=[
-        'pytest',
+        'pytest>=3.10.0',
     ],
     install_requires=[
         'Flask>=1.0',
@@ -39,10 +39,12 @@ setup(
             'flake8',
             'flask-cors',
             'flask-sqlalchemy',
+            'flask-mail',
             'freezegun',
-            'pytest',
-            'pytest-flask',
+            'pytest>=3.10.0',
+            'pytest-flask>=0.14.0',
             'sphinx',
+            'bcrypt==3.1.4',
         ],
     },
     include_package_data=True,
