@@ -41,6 +41,7 @@ setup(
             'flask-sqlalchemy',
             'flask-mail',
             'freezegun',
+            'ipython',
             'pytest>=3.10.0',
             'pytest-flask>=0.14.0',
             'sphinx',

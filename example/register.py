@@ -1,5 +1,6 @@
 import flask
 import flask_cors
+import flask_mail
 import flask_praetorian
 import flask_sqlalchemy
 import tempfile
@@ -9,6 +10,7 @@ from runner import runner
 db = flask_sqlalchemy.SQLAlchemy()
 guard = flask_praetorian.Praetorian()
 cors = flask_cors.CORS()
+mail = flask_mail.Mail()
 
 
 # A generic user model that might be used by an app powered by flask-praetorian
@@ -48,6 +50,12 @@ app.debug = True
 app.config['SECRET_KEY'] = 'top secret'
 app.config['JWT_ACCESS_LIFESPAN'] = {'seconds': 30}
 app.config['JWT_REFRESH_LIFESPAN'] = {'minutes': 2}
+app.config['PRAETORIAN_CONFIRMATION_SENDER'] = (
+    'confirmation.sender@praetorian.com'
+)
+app.config['PRAETORIAN_CONFIRMATION_SUBJECT'] = (
+    'confirmation for praetorian regristration example'
+)
 
 # Initialize the flask-praetorian instance for the app
 guard.init_app(app, User)
@@ -59,6 +67,10 @@ db.init_app(app)
 
 # Initializes CORS so that the api_tool can talk to the example app
 cors.init_app(app)
+
+# Initialize flask-mail
+app.config['MAIL_SERVER'] = 'mailer'
+mail.init_app(app)
 
 # Add users for the example
 with app.app_context():
@@ -86,6 +98,54 @@ with app.app_context():
 
 
 # Set up some routes for the example
+
+@app.route('/register', methods=['POST'])
+def register():
+    """
+    Registers a new by parsing a POST request containing new user info and
+    dispatching an email with a registration token
+
+    .. example::
+       $ curl http://localhost:5000/register -X POST \
+         -d '{
+           "username":"Brandt", \
+           "password":"herlifewasinyourhands" \
+           "email":"brandt@biglebowski.com"
+         }'
+    """
+    req = flask.request.get_json(force=True)
+    username = req.get('username', None)
+    email = req.get('email', None)
+    password = req.get('password', None)
+    new_user = User(
+        username=username,
+        password=guard.hash_password(password),
+        roles='operator',
+    )
+    db.session.add(new_user)
+    guard.send_registration_email(email, user=new_user)
+    ret = {'message': 'successfully sent registration email to user {}'.format(
+        new_user.username
+    )}
+    return (flask.jsonify(ret), 200)
+
+
+@app.route('/finalize', methods=['GET'])
+def finalize():
+    """
+    Finalizes a user registration with the token that they were issued in their
+    registration email
+
+    .. example::
+       $ curl http://localhost:5000/finalize -X GET \
+         -H "Authorization: Bearer <your_token>"
+    """
+    registration_token = guard.read_token_from_header()
+    user = guard.get_user_from_registration_token(registration_token)
+    # perform 'activation' of user here...like setting 'active' or something
+    ret = {'access_token': guard.encode_jwt_token(user)}
+    return flask.jsonify(ret), 200
+
 
 @app.route('/login', methods=['POST'])
 def login():

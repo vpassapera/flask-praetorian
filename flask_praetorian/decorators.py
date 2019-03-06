@@ -1,6 +1,11 @@
 import functools
 
-from flask_praetorian.exceptions import MissingRoleError
+from flask_praetorian.exceptions import (
+    MissingRoleError,
+    MisusedRegistrationToken,
+)
+
+from flask_praetorian.constants import IS_REGISTRATION_TOKEN_CLAIM
 
 from flask_praetorian.utilities import (
     current_guard,
@@ -20,6 +25,10 @@ def _verify_and_add_jwt():
         guard = current_guard()
         token = guard.read_token_from_header()
         jwt_data = guard.extract_jwt_token(token)
+        MisusedRegistrationToken.require_condition(
+            IS_REGISTRATION_TOKEN_CLAIM not in jwt_data,
+            "cannot use a registration token for normal authorized access"
+        )
         add_jwt_data_to_app_context(jwt_data)
 
 
@@ -48,12 +57,13 @@ def roles_required(*required_rolenames):
     def decorator(method):
         @functools.wraps(method)
         def wrapper(*args, **kwargs):
+            role_set = set([str(n) for n in required_rolenames])
             _verify_and_add_jwt()
             try:
                 MissingRoleError.require_condition(
-                    current_rolenames().issuperset(set(required_rolenames)),
+                    current_rolenames().issuperset(role_set),
                     "This endpoint requires all the following roles: {}",
-                    [', '.join(required_rolenames)],
+                    [', '.join(role_set)],
                 )
                 return method(*args, **kwargs)
             finally:
@@ -71,14 +81,13 @@ def roles_accepted(*accepted_rolenames):
     def decorator(method):
         @functools.wraps(method)
         def wrapper(*args, **kwargs):
+            role_set = set([str(n) for n in accepted_rolenames])
             _verify_and_add_jwt()
             try:
                 MissingRoleError.require_condition(
-                    not current_rolenames().isdisjoint(
-                        set(accepted_rolenames)
-                    ),
+                    not current_rolenames().isdisjoint(role_set),
                     "This endpoint requires one of the following roles: {}",
-                    [', '.join(accepted_rolenames)],
+                    [', '.join(role_set)],
                 )
                 return method(*args, **kwargs)
             finally:

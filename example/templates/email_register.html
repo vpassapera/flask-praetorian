@@ -1,0 +1,30 @@
+<div class=row>
+  <div class="col-sm-12 col-md-10 col-md-offset-1">
+    <form>
+      <fieldset>
+        <legend>Credentials</legend>
+          <div class="input-group fluid">
+            <label for="username">Username</label>
+            <input type="text" id="username" placeholder="username">
+            <label for="password">Password</label>
+            <input type="text" id="password" placeholder="password">
+            <label for="email">Email</label>
+            <input type="text" id="email" placeholder="email">
+            <button type="button" onclick="requestRegistration()">Register</button>
+          </div>
+          <div class="input-group fluid">
+            <label for="token">Registration Token</label>
+            <textarea id="token" rows=5 style="width:100%"></textarea>
+            <button type="button" onclick="copyToken()">&#x1f4cb</button>
+            <button type="button" onclick="clearToken()">&#x2716</button>
+          </div>
+          <div class="input-group fluid">
+            <label for="access">Remaining Access Lifespan</label>
+            <input type="text" id="access" readonly>
+            <label for="refresh">Remaining Refresh Lifespan</label>
+            <input type="text" id="refresh" readonly>
+        </legend>
+      </fieldset>
+    </form>
+  </div>
+</div>

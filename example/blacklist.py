@@ -4,6 +4,8 @@ import flask_praetorian
 import flask_sqlalchemy
 import tempfile
 
+from runner import runner
+
 db = flask_sqlalchemy.SQLAlchemy()
 guard = flask_praetorian.Praetorian()
 cors = flask_cors.CORS()
@@ -133,4 +135,4 @@ def blacklist_token():
 
 # Run the example
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5020)
+    runner(app)

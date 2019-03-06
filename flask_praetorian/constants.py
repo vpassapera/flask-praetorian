@@ -15,7 +15,7 @@ DEFAULT_EMAIL_TEMPLATE = dirname(dirname(abspath(__file__))) + \
 
 DEFAULT_CONFIRMATION_ENDPOINT = 'registration_confirmation'
 DEFAULT_CONFIRMATION_SENDER = 'you@whatever.com'
-DEFAULT_CONFIRMATION_SUBJECT = 'You still need to confirm your registration'
+DEFAULT_CONFIRMATION_SUBJECT = 'Please confirm your registration'
 DEFAULT_HASH_AUTOUPDATE = False
 DEFAULT_HASH_AUTOTEST = False
 DEFAULT_HASH_SCHEME = 'pbkdf2_sha512'
@@ -25,7 +25,13 @@ DEFAULT_HASH_ALLOWED_SCHEMES = [
 ]
 DEFAULT_HASH_DEPRECATED_SCHEMES = []
 
-RESERVED_CLAIMS = {'iat', 'exp', 'rf_exp', 'jti', 'id', 'rls'}
+REFRESH_EXPIRATION_CLAIM = 'rf_exp'
+IS_REGISTRATION_TOKEN_CLAIM = 'is_ert'
+RESERVED_CLAIMS = {
+    'iat', 'exp', 'jti', 'id', 'rls',
+    REFRESH_EXPIRATION_CLAIM,
+    IS_REGISTRATION_TOKEN_CLAIM,
+}
 
 # 1M days seems reasonable. If this code is being used in 3000 years...welp
 VITAM_AETERNUM = pendulum.Duration(days=1000000)

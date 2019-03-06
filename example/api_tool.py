@@ -1,10 +1,15 @@
 import flask
+import flask_cors
+import logging
 import os
+
+from argparse import ArgumentParser, ArgumentDefaultsHelpFormatter
 
 
 # Initialize flask app for the example
 app = flask.Flask(__name__)
 app.debug = True
+cors = flask_cors.CORS(app)
 
 
 @app.route('/')
@@ -46,7 +51,18 @@ def custom():
     return flask.render_template(
         'custom.html',
         scripts=os.listdir(app.static_folder),
-        api_port=5000,
+        api_port=5030,
+        access_lifespan=24*60*60,
+        refresh_lifespan=30*24*60*60,
+    )
+
+
+@app.route('/register')
+def register():
+    return flask.render_template(
+        'register.html',
+        scripts=os.listdir(app.static_folder),
+        api_port=5040,
         access_lifespan=24*60*60,
         refresh_lifespan=30*24*60*60,
     )
@@ -54,4 +70,16 @@ def custom():
 
 # Run the example
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5050)
+    parser = ArgumentParser(
+        formatter_class=ArgumentDefaultsHelpFormatter,
+        description='Starts the api tool',
+    )
+    parser.add_argument('-H', '--host', default='0.0.0.0')
+    parser.add_argument('-p', '--port', default=5000)
+    parser.add_argument('-l', '--logfile')
+    args = parser.parse_args()
+    if args.logfile is not None:
+        file_handler = logging.FileHandler(args.logfile)
+        file_handler.setLevel(logging.DEBUG)
+        app.logger.addHandler(file_handler)
+    app.run(host=args.host, port=args.port)

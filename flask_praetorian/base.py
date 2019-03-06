@@ -13,6 +13,7 @@ from flask_mail import Message
 from passlib.context import CryptContext
 
 from flask_praetorian.utilities import deprecated
+
 from flask_praetorian.exceptions import (
     AuthenticationError,
     BlacklistedError,
@@ -20,13 +21,14 @@ from flask_praetorian.exceptions import (
     EarlyRefreshError,
     ExpiredAccessError,
     ExpiredRefreshError,
+    InvalidRegistrationToken,
     InvalidTokenHeader,
     InvalidUserError,
+    LegacyScheme,
     MissingClaimError,
     MissingTokenHeader,
     MissingUserError,
     PraetorianError,
-    LegacyScheme,
 )
 
 from flask_praetorian.constants import (
@@ -46,6 +48,8 @@ from flask_praetorian.constants import (
     DEFAULT_HASH_AUTOUPDATE,
     DEFAULT_HASH_AUTOTEST,
     DEFAULT_HASH_DEPRECATED_SCHEMES,
+    IS_REGISTRATION_TOKEN_CLAIM,
+    REFRESH_EXPIRATION_CLAIM,
     RESERVED_CLAIMS,
     VITAM_AETERNUM,
     AccessType,
@@ -65,7 +69,7 @@ class Praetorian:
         self.salt = None
 
         if app is not None and user_class is not None:
-            self.app = self.init_app(app, user_class, is_blacklisted)
+            self.init_app(app, user_class, is_blacklisted)
 
     def init_app(self, app, user_class, is_blacklisted=None):
         """
@@ -298,7 +302,7 @@ class Praetorian:
     def encode_jwt_token(
             self, user,
             override_access_lifespan=None, override_refresh_lifespan=None,
-            bypass_user_check=False,
+            bypass_user_check=False, is_registration_token=False,
             **custom_claims
     ):
         """
@@ -317,6 +321,9 @@ class Praetorian:
         :param: bypass_user_check:         Override checking the user for
                                            being real/active.  Used for
                                            registration token generation.
+        :param: is_registration_token:     Indicates that the token will be
+                                           used only for email-based
+                                           registration
         :param: custom_claims:             Additional claims that should
                                            be packed in the payload. Note that
                                            any claims supplied here must be
@@ -331,7 +338,9 @@ class Praetorian:
 
         moment = pendulum.now('UTC')
 
-        if override_refresh_lifespan is None:
+        if is_registration_token:
+            refresh_lifespan = pendulum.Duration()
+        elif override_refresh_lifespan is None:
             refresh_lifespan = self.refresh_lifespan
         else:
             refresh_lifespan = override_refresh_lifespan
@@ -346,15 +355,17 @@ class Praetorian:
             refresh_expiration,
         )
 
-        payload_parts = dict(
-            iat=moment.int_timestamp,
-            exp=access_expiration,
-            rf_exp=refresh_expiration,
-            jti=str(uuid.uuid4()),
-            id=user.identity,
-            rls=','.join(user.rolenames),
-            **custom_claims
-        )
+        payload_parts = {
+            'iat': moment.int_timestamp,
+            'exp': access_expiration,
+            'jti': str(uuid.uuid4()),
+            'id': user.identity,
+            'rls': ','.join(user.rolenames),
+            REFRESH_EXPIRATION_CLAIM: refresh_expiration,
+        }
+        if is_registration_token:
+            payload_parts[IS_REGISTRATION_TOKEN_CLAIM] = True
+        payload_parts.update(custom_claims)
         return jwt.encode(
             payload_parts, self.encode_key, self.encode_algorithm,
         ).decode('utf-8')
@@ -411,7 +422,7 @@ class Praetorian:
             access_lifespan = self.access_lifespan
         else:
             access_lifespan = override_access_lifespan
-        refresh_expiration = data['rf_exp']
+        refresh_expiration = data[REFRESH_EXPIRATION_CLAIM]
         access_expiration = min(
             (moment + access_lifespan).int_timestamp,
             refresh_expiration,
@@ -420,15 +431,15 @@ class Praetorian:
         custom_claims = {
             k: v for (k, v) in data.items() if k not in RESERVED_CLAIMS
         }
-        payload_parts = dict(
-            iat=moment.int_timestamp,
-            exp=access_expiration,
-            rf_exp=refresh_expiration,
-            jti=data['jti'],
-            id=data['id'],
-            rls=','.join(user.rolenames),
-            **custom_claims
-        )
+        payload_parts = {
+            'iat': moment.int_timestamp,
+            'exp': access_expiration,
+            'jti': data['jti'],
+            'id': data['id'],
+            'rls': ','.join(user.rolenames),
+            REFRESH_EXPIRATION_CLAIM: refresh_expiration,
+        }
+        payload_parts.update(custom_claims)
         return jwt.encode(
             payload_parts, self.encode_key, self.encode_algorithm,
         ).decode('utf-8')
@@ -469,8 +480,8 @@ class Praetorian:
             'Token is missing exp claim',
         )
         MissingClaimError.require_condition(
-            'rf_exp' in data,
-            'Token is missing rf_exp claim',
+            REFRESH_EXPIRATION_CLAIM in data,
+            'Token is missing {} claim'.format(REFRESH_EXPIRATION_CLAIM),
         )
         moment = pendulum.now('UTC').int_timestamp
         if access_type == AccessType.access:
@@ -484,7 +495,7 @@ class Praetorian:
                 'access permission for token has not expired. may not refresh',
             )
             ExpiredRefreshError.require_condition(
-                moment <= data['rf_exp'],
+                moment <= data[REFRESH_EXPIRATION_CLAIM],
                 'refresh permission for token has expired',
             )
 
@@ -545,8 +556,8 @@ class Praetorian:
         return {self.header_name: self.header_type + ' ' + token}
 
     def send_registration_email(
-        self, user=None, template=None,
-        subject=None, override_access_lifepsan=None
+        self, email, user=None, template=None,
+        subject=None, override_access_lifespan=None
     ):
         """
         Sends a registration email to a new user, containing a time expiring
@@ -560,7 +571,7 @@ class Praetorian:
                                           (username, id, email, etc)
         :param: subject:                  The registration email subject
                                           override.
-        :param: override_access_lifepsan: Anything used in `encode_jwt_token`,
+        :param: override_access_lifespan: Anything used in `encode_jwt_token`,
                                           but all we really care about is
                                           `override_access_token`.  This
                                           overrides the instance's defined
@@ -568,39 +579,36 @@ class Praetorian:
                                           default.  The token will no longer
                                           be valid after this time and
                                           be rejected.
-        :param: template:                 Template file location for email.
-                                          If not provided, a stock entry is
-                                          used.
+        :param: template:                 HTML Template for email.
+                                          If not provided, the token is sent
+                                          in a bare message
         """
+
+        if template is None:
+            template = textwrap.dedent("""
+                <!doctype html>
+                <html>
+                  <head><title>Email Verification</title></head>
+                  <body>{{ token }}</body>
+                </html>
+            """.strip())
 
         notification = {
                 'result': None,
                 'message': None,
-                'email': user.email,
+                'user': str(user),
+                'email': email,
                 'token': None,
-                'confirmation_uri': None,
                 'subject': subject if subject else self.confirmation_subject,
         }
 
         with PraetorianError.handle_errors('fail sending confirmation email'):
             notification['token'] = self.encode_jwt_token(
                 user,
-                override_access_lifepsan,
-                bypass_user_check=True
+                override_access_lifespan=override_access_lifespan,
+                bypass_user_check=True, is_registration_token=True,
             )
-            try:
-                """ attempt to find the URI for registration confirmation """
-                _confirmation_uri = url_for(self.confirmation_endpoint,
-                                            _external=True)
-                notification['confirmation_uri'] = '/'.join(
-                        [_confirmation_uri, notification['token']]
-                )
-            except Exception:
-                """ if fails, lets set None """
-                notification['confirmation_uri'] = None
-
-            with open(self.email_template) as _template:
-                tmpl = Template(_template.read())
+            tmpl = Template(template)
             notification['message'] = tmpl.render(notification).strip()
 
             msg = Message(
@@ -610,12 +618,33 @@ class Praetorian:
                     recipients=[notification['email']]
             )
 
-            notification['result'] = self.app.extensions['mail'].send(msg)
+            app = flask.current_app
+            notification['result'] = app.extensions['mail'].send(msg)
 
         return notification
 
-    def validate_confirmation(self, token):
-        return self.extract_jwt_token(token)
+    def get_user_from_registration_token(self, token):
+        """
+        Gets a user based on the registration token that is supplied. Verifies
+        that the token is a regisration token and that the user can be properly
+        retrieved
+        """
+        jwt_data = self.extract_jwt_token(token)
+        InvalidRegistrationToken.require_condition(
+            IS_REGISTRATION_TOKEN_CLAIM in jwt_data,
+            "invalid registration token used for verification"
+        )
+        user_id = jwt_data.get('id')
+        PraetorianError.require_condition(
+            user_id is not None,
+            "Could not fetch an id from the registration token",
+        )
+        user = self.user_class.identify(user_id)
+        PraetorianError.require_condition(
+            user is not None,
+            "Could not identify the user from the registration token",
+        )
+        return user
 
     def hash_password(self, raw_password):
         """

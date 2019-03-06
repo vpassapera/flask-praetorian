@@ -1,0 +1,72 @@
+version: "3.3"
+services:
+
+  praetorian:
+    image: praetorian:local
+    build:
+      context: ../
+      dockerfile: example/Dockerfile
+    command: /bin/true
+
+  basic:
+    image: praetorian:local
+    depends_on:
+      - praetorian
+    volumes:
+      - "./basic.py:/app/example.py"
+    ports:
+      - "5000:5000"
+
+  refresh:
+    image: praetorian:local
+    depends_on:
+      - praetorian
+    volumes:
+      - "./refresh.py:/app/example.py"
+    ports:
+      - "5010:5000"
+
+  blacklist:
+    image: praetorian:local
+    depends_on:
+      - praetorian
+    volumes:
+      - "./blacklist.py:/app/example.py"
+    ports:
+      - "5020:5000"
+
+  custom:
+    image: praetorian:local
+    depends_on:
+      - praetorian
+    volumes:
+      - "./custom_claims.py:/app/example.py"
+    ports:
+      - "5030:5000"
+
+  register:
+    image: praetorian:local
+    depends_on:
+      - praetorian
+    volumes:
+      - "./register.py:/app/example.py"
+    ports:
+      - "5040:5000"
+
+  tool:
+    image: praetorian:local
+    depends_on:
+      - praetorian
+    volumes:
+      - "./api_tool.py:/app/example.py"
+      - "./static/:/app/static/"
+      - "./templates/:/app/templates/"
+    ports:
+      - "5050:5000"
+
+  mailer:
+    image: namshi/smtp
+    restart: always
+    ports:
+      - "25:25"
+

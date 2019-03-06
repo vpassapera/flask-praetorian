@@ -4,6 +4,9 @@ import flask_sqlalchemy
 import flask_praetorian
 import flask_cors
 
+from runner import runner
+
+
 db = flask_sqlalchemy.SQLAlchemy()
 guard = flask_praetorian.Praetorian()
 cors = flask_cors.CORS()
@@ -158,4 +161,4 @@ def protected_operator_accepted():
 
 # Run the example
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    runner(app)
